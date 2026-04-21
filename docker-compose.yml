@@ -2,10 +2,11 @@ services:
   api:
     build: ./api
     restart: unless-stopped
+    ports:
+      - "8000:8000" # Add this so the test runner can reach the API
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    # Healthcheck removed to prevent "unhealthy" blocks
     depends_on:
       redis:
         condition: service_healthy
@@ -26,10 +27,11 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000 # Standard naming convention
       - API_URL=http://api:8000
     depends_on:
       api:
-        condition: service_started # Changed from service_healthy
+        condition: service_started
 
   redis:
     image: redis:alpine
