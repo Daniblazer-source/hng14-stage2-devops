@@ -1,0 +1,65 @@
+name: Stage 2 CI/CD
+
+on:
+  push:
+    branches: [ main, feat/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          pip install flake8 pytest httpx fakeredis fastapi redis uvicorn
+          
+      - name: Lint with flake8
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Run Unit Tests
+        run: |
+          cd api
+          pytest test_main.py
+
+  security-scan:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'hng-api:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0' # Don't fail the build yet, just report
+          severity: 'CRITICAL,HIGH'
+
+  integration-test:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build and Run with Compose
+        run: docker-compose up --build -d
+        
+      - name: Wait for Healthchecks
+        run: sleep 30
+        
+      - name: Verify Application Stack
+        run: |
+          curl -f http://localhost:3000/ || exit 1
+          JOB_ID=$(curl -s -X POST http://localhost:3000/submit | jq -r '.job_id')
+          echo "Created job $JOB_ID"
+          sleep 5
+          STATUS=$(curl -s http://localhost:3000/status/$JOB_ID | jq -r '.status')
+          if [ "$STATUS" != "completed" ] && [ "$STATUS" != "queued" ]; then exit 1; fi
