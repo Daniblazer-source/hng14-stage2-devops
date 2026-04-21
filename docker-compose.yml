@@ -6,7 +6,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"] # Make sure your FastAPI has this route!
+      # Using python3 instead of curl since python:3.9-slim doesn't have curl installed
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
       interval: 10s
       timeout: 5s
       retries: 5
