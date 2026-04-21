@@ -1,33 +1,35 @@
-# Stage 1: Build dependencies
+# Stage 1: Build
 FROM python:3.9-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Stage 2: Final runtime image
+# Create a virtualenv and install dependencies there
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime
 FROM python:3.9-slim
 
 WORKDIR /app
 
-# Create a non-root user for security
+# Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy only the installed packages from builder
-COPY --from=builder /root/.local /home/appuser/.local
+# Copy the entire virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-# Ensure the non-root user owns the files
+# Ensure permissions and set PATH to use the venv
 RUN chown -R appuser:appuser /app
+ENV PATH="/opt/venv/bin:$PATH"
 USER appuser
-
-# Add local bin to path to find uvicorn
-ENV PATH=/home/appuser/.local/bin:$PATH
 
 EXPOSE 8000
 
-# HEALTHCHECK: Important for Stage 2 grading!
+# Using the socket check we discussed to avoid 'curl' issues
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:8000/docs || exit 1
+  CMD python -c "import socket; s = socket.socket(); s.connect(('localhost', 8000))" || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
