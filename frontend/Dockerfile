@@ -18,8 +18,14 @@ COPY . .
 RUN chown -R appuser:appgroup /app
 USER appuser
 
+# FIX: Set environment variable to ensure Node listens on all interfaces
+ENV HOST=0.0.0.0
+ENV PORT=3000
+
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+
+# FIX: Use a simpler healthcheck or increase start-period to allow the app to boot
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 CMD ["node", "app.js"]
