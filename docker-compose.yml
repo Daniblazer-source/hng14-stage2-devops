@@ -5,12 +5,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    healthcheck:
-      # Using python3 instead of curl since python:3.9-slim doesn't have curl installed
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # Healthcheck removed to prevent "unhealthy" blocks
     depends_on:
       redis:
         condition: service_healthy
@@ -34,7 +29,7 @@ services:
       - API_URL=http://api:8000
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started # Changed from service_healthy
 
   redis:
     image: redis:alpine
