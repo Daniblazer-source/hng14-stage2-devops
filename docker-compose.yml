@@ -1,42 +1,57 @@
 services:
   api:
     build: ./api
-    restart: unless-stopped
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  worker:
-    build: ./worker
-    restart: unless-stopped
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+    networks:
+      - hng_network
     depends_on:
       redis:
         condition: service_healthy
 
   frontend:
     build: ./frontend
-    restart: unless-stopped
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - API_URL=http://api:8000
+    networks:
+      - hng_network
     depends_on:
       api:
         condition: service_started
 
   redis:
     image: redis:alpine
-    restart: unless-stopped
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - hng_network
+
+networks:
+  hng_network:
+    name: hng_devops_network

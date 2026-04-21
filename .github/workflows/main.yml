@@ -2,8 +2,6 @@ name: Stage 2 CI/CD
 
 on:
   push:
-    branches: [ main, feat/* ]
-  pull_request:
     branches: [ main ]
 
 jobs:
@@ -11,78 +9,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Run Hadolint (Docker Lint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: "api/Dockerfile"
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest httpx fakeredis fastapi redis uvicorn
-      - name: Run Unit Tests
-        run: pytest api/tests/
+          pip install flake8 pytest pytest-cov httpx fakeredis fastapi redis uvicorn
+      
+      - name: Run flake8
+        run: flake8 .
+
+      - name: Run Unit Tests with Coverage
+        run: |
+          # Point to the new root tests directory
+          pytest --cov=api --cov-report=xml tests/
+      
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage.xml
 
   security-scan:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build image for scan
+      - name: Build image
         run: docker build -t hng-api:${{ github.sha }} ./api
-      - name: Run Trivy scanner
+      - name: Trivy Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hng-api:${{ github.sha }}'
-          format: 'table'
-          exit-code: '0'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
+      - name: Upload SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
 
-  integration-test:
+  integration:
     needs: security-scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build and Run with Compose
+      - name: Start Services
         run: docker compose up --build -d
-
-      - name: Wait for API Readiness
+      - name: Wait for API
+        run: sleep 30
+      - name: Run Integration Script
         run: |
-          echo "Waiting for API to respond on port 8000..."
-          # Active polling: try every 2 seconds for up to 60 seconds
-          timeout 60s bash -c 'until curl -s http://localhost:8000/docs > /dev/null; do sleep 2; done'
-          echo "API is ready!"
-
-      - name: Verify Application Stack
-        run: |
-          # 1. Check Frontend
-          curl -f http://localhost:3000/ || exit 1
-
-          # 2. Submit Job
-          echo "Submitting job..."
-          RESPONSE=$(curl -s -X POST http://localhost:3000/submit)
-          echo "Frontend response: $RESPONSE"
-          
-          JOB_ID=$(echo $RESPONSE | jq -r '.job_id // empty')
-
-          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
-            echo "❌ Integration failed: Job ID is missing."
-            docker compose logs api
-            docker compose logs frontend
-            exit 1
-          fi
-
-          echo "✅ Created job $JOB_ID"
-          sleep 10 # Wait for worker
-
-          STATUS_DATA=$(curl -s http://localhost:3000/status/$JOB_ID)
-          STATUS=$(echo $STATUS_DATA | jq -r '.status')
-
-          echo "📊 Final Status: $STATUS"
-          if [[ "$STATUS" == "completed" || "$STATUS" == "queued" ]]; then
-            echo "🎉 Test Passed!"
-            exit 0
-          else
-            echo "❌ Test Failed: Status was $STATUS"
-            exit 1
-          fi
+          chmod +x integration.sh
+          ./integration.sh
