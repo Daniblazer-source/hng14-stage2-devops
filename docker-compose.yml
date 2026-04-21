@@ -8,7 +8,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   worker:
     build: ./worker
@@ -17,7 +18,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -25,12 +27,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - API_URL=http://localhost:8000
+      - API_URL=http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_started
 
   redis:
     image: redis:alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
