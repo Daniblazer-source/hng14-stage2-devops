@@ -40,3 +40,24 @@ This document logs all bugs, misconfigurations, and production gaps identified i
 - **Line**: 6
 - **Issue**: The `API_URL` was hardcoded to `localhost:8000`. This prevents the frontend from communicating with the API when deployed in separate containers.
 - **Fix**: Replaced the hardcoded string with `process.env.API_URL` to allow the API address to be injected at runtime via Docker Compose.
+
+
+### Multi-stage Python Dependency Pathing
+- **Issue**: Using `pip install --user` in the builder stage caused `ModuleNotFoundError` in the final stage because the Python pathing did not translate correctly between the root builder and the non-root runner.
+- **Fix**: Implemented a Python Virtual Environment (`venv`) in the `/opt` directory to ensure all dependencies and executables are portable and correctly mapped in the final production image.
+
+
+
+## 4. Infrastructure & CI/CD
+
+### Docker Healthcheck Failures
+- **Issue**: The API container lacked `curl`, and the Frontend lacked a root `/` route. This caused Docker to mark containers as `unhealthy`, preventing the stack from fully initializing.
+- **Fix**: Switched the API healthcheck to a native Python socket check (removing the `curl` dependency) and added a basic `GET /` route to the Frontend.
+
+### Docker Compose V2 Compatibility in CI
+- **Issue**: The GitHub Actions runner failed when using the legacy `docker-compose` command (Exit 127).
+- **Fix**: Updated the workflow to use the modern `docker compose` (V2) syntax supported by current Ubuntu runners.
+
+### Security Vulnerabilities (Trivy)
+- **Issue**: Docker images required automated scanning for "High" and "Critical" vulnerabilities as per production requirements.
+- **Fix**: Integrated `aquasecurity/trivy-action` into the pipeline and ensured images were built locally within the scan job to allow for successful inspection.
