@@ -20,7 +20,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install flake8 pytest httpx fakeredis fastapi redis uvicorn
       - name: Run Unit Tests
-        # Updated path to the tests directory where test_main.py now lives
         run: pytest api/tests/
 
   security-scan:
@@ -28,17 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # We must build the image in THIS job so Trivy can see it
       - name: Build image for scan
         run: docker build -t hng-api:${{ github.sha }} ./api
-
       - name: Run Trivy scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hng-api:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' 
+          exit-code: '0'
           severity: 'CRITICAL,HIGH'
 
   integration-test:
@@ -50,32 +46,43 @@ jobs:
       - name: Build and Run with Compose
         run: docker compose up --build -d
 
-      - name: Wait for Healthchecks
+      - name: Wait for API Readiness
         run: |
-          echo "Waiting for containers to be healthy..."
-          sleep 30
-          docker ps
+          echo "Waiting for API to respond on port 8000..."
+          # Active polling: try every 2 seconds for up to 60 seconds
+          timeout 60s bash -c 'until curl -s http://localhost:8000/docs > /dev/null; do sleep 2; done'
+          echo "API is ready!"
 
       - name: Verify Application Stack
         run: |
-          # Verify frontend is up (Ensure your docker-compose maps port 3000)
+          # 1. Check Frontend
           curl -f http://localhost:3000/ || exit 1
 
-          # Test the end-to-end flow (Submit -> Status)
-          JOB_DATA=$(curl -s -X POST http://localhost:3000/submit)
-          JOB_ID=$(echo $JOB_DATA | jq -r '.job_id')
+          # 2. Submit Job
+          echo "Submitting job..."
+          RESPONSE=$(curl -s -X POST http://localhost:3000/submit)
+          echo "Frontend response: $RESPONSE"
+          
+          JOB_ID=$(echo $RESPONSE | jq -r '.job_id // empty')
 
-          echo "Created job $JOB_ID"
-          sleep 5
+          if [ -z "$JOB_ID" ] || [ "$JOB_ID" == "null" ]; then
+            echo "❌ Integration failed: Job ID is missing."
+            docker compose logs api
+            docker compose logs frontend
+            exit 1
+          fi
+
+          echo "✅ Created job $JOB_ID"
+          sleep 10 # Wait for worker
 
           STATUS_DATA=$(curl -s http://localhost:3000/status/$JOB_ID)
           STATUS=$(echo $STATUS_DATA | jq -r '.status')
 
-          echo "Final Status: $STATUS"
-          if [ "$STATUS" == "completed" ] || [ "$STATUS" == "queued" ]; then
-            echo "Integration test passed!"
+          echo "📊 Final Status: $STATUS"
+          if [[ "$STATUS" == "completed" || "$STATUS" == "queued" ]]; then
+            echo "🎉 Test Passed!"
             exit 0
           else
-            echo "Integration test failed: Status was $STATUS"
+            echo "❌ Test Failed: Status was $STATUS"
             exit 1
           fi

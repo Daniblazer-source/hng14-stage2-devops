@@ -16,6 +16,7 @@ app.add_middleware(
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
+# The decode_responses=True is CRITICAL for the worker to read the ID correctly
 r = redis.Redis(
     host=REDIS_HOST, 
     port=REDIS_PORT, 
@@ -30,6 +31,7 @@ def create_job():
         r.hset(f"job:{job_id}", "status", "queued")
         return {"job_id": job_id}
     except Exception as e:
+        print(f"Redis Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.get("/jobs/{job_id}")
@@ -42,4 +44,5 @@ def get_job(job_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Status Fetch Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
