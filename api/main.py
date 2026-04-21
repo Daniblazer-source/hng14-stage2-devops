@@ -6,15 +6,15 @@ import os
 
 app = FastAPI()
 
-# CORS (allow frontend to communicate with API)
+# CORS configuration (allow frontend to access API)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=["*"],  # Restrict in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Environment variables (Docker-friendly)
+# Environment variables (Docker-friendly defaults)
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
@@ -31,10 +31,10 @@ def create_job():
     try:
         job_id = str(uuid.uuid4())
 
-        # Push job to queue
+        # Push job to queue for worker
         r.lpush("job", job_id)
 
-        # Store job status
+        # Set initial status
         r.hset(f"job:{job_id}", "status", "queued")
 
         return {"job_id": job_id}
@@ -59,7 +59,7 @@ def get_job(job_id: str):
         }
 
     except HTTPException:
-        # Re-raise known HTTP errors
+        # Preserve intended HTTP errors (like 404)
         raise
     except Exception as e:
         print(f"Redis Error (get_job): {e}")
