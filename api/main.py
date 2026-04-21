@@ -4,6 +4,7 @@ import redis
 import uuid
 import os
 
+
 app = FastAPI()
 
 app.add_middleware(
@@ -16,12 +17,12 @@ app.add_middleware(
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-# The decode_responses=True is CRITICAL for the worker to read the ID correctly
 r = redis.Redis(
-    host=REDIS_HOST, 
-    port=REDIS_PORT, 
+    host=REDIS_HOST,
+    port=REDIS_PORT,
     decode_responses=True
 )
+
 
 @app.post("/jobs")
 def create_job():
@@ -33,6 +34,7 @@ def create_job():
     except Exception as e:
         print(f"Redis Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
