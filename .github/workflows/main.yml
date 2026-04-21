@@ -17,26 +17,28 @@ jobs:
           python-version: '3.9'
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install flake8 pytest httpx fakeredis fastapi redis uvicorn
       - name: Run Unit Tests
-        run: pytest api/test_main.py
+        # Updated path to the tests directory where test_main.py now lives
+        run: pytest api/tests/
 
   security-scan:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       # We must build the image in THIS job so Trivy can see it
       - name: Build image for scan
         run: docker build -t hng-api:${{ github.sha }} ./api
-        
+
       - name: Run Trivy scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hng-api:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' # Set to 0 so the build passes even if there are vulnerabilities
+          exit-code: '0' 
           severity: 'CRITICAL,HIGH'
 
   integration-test:
@@ -44,32 +46,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      # Using 'docker compose' (v2) instead of 'docker-compose'
+
       - name: Build and Run with Compose
         run: docker compose up --build -d
-        
+
       - name: Wait for Healthchecks
         run: |
           echo "Waiting for containers to be healthy..."
           sleep 30
           docker ps
-        
+
       - name: Verify Application Stack
         run: |
-          # Verify frontend is up
+          # Verify frontend is up (Ensure your docker-compose maps port 3000)
           curl -f http://localhost:3000/ || exit 1
-          
+
           # Test the end-to-end flow (Submit -> Status)
           JOB_DATA=$(curl -s -X POST http://localhost:3000/submit)
           JOB_ID=$(echo $JOB_DATA | jq -r '.job_id')
-          
+
           echo "Created job $JOB_ID"
           sleep 5
-          
+
           STATUS_DATA=$(curl -s http://localhost:3000/status/$JOB_ID)
           STATUS=$(echo $STATUS_DATA | jq -r '.status')
-          
+
           echo "Final Status: $STATUS"
           if [ "$STATUS" == "completed" ] || [ "$STATUS" == "queued" ]; then
             echo "Integration test passed!"
