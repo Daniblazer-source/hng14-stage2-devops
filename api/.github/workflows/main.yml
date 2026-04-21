@@ -1,85 +1,11 @@
-name: Stage 2 CI/CD
-
-on:
-  push:
-    branches: [ main, feat/* ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  lint-and-test:
-    name: Lint and Unit Testing
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Run Hadolint (Docker Linter)
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: api/Dockerfile
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Install dependencies
+- name: Wait for API Readiness
         run: |
-          pip install flake8 pytest pytest-cov httpx fakeredis fastapi redis uvicorn
-
-      - name: Run Flake8 (Python Linter)
-        run: flake8 api/ --exclude=venv,__pycache__
-
-      - name: Run Pytest with Coverage
-        run: |
-          pytest api/tests/ --cov=api --cov-report=xml
-
-      - name: Upload Coverage Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: code-coverage
-          path: api/coverage.xml
-
-  security-scan:
-    name: Security Vulnerability Scan
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      
-      - name: Build API Image
-        run: docker build -t hng-api:${{ github.sha }} ./api
-        
-      - name: Run Trivy scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'hng-api:${{ github.sha }}'
-          format: 'sarif' # Grader wants SARIF
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Upload Trivy Scan Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-report
-          path: trivy-results.sarif
-
-  integration-test:
-    name: Integration Testing
-    needs: security-scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      
-      - name: Build and Run Stack
-        run: docker compose up --build -d
-        
-      - name: Run Integration Script
-        run: bash integration.sh
-        
-      - name: Teardown
-        if: always() # FIX: pipeline_teardown_always
-        run: docker compose down
+          echo "Waiting for API to respond on port 8000..."
+          # Active polling: try every 2 seconds for up to 60 seconds
+          if ! timeout 60s bash -c 'until curl -s http://localhost:8000/jobs > /dev/null; do sleep 2; echo "Still waiting for API..."; done'; then
+            echo "❌ API failed to respond. Dumping logs for debugging:"
+            docker compose logs api
+            docker compose logs redis
+            exit 1
+          fi
+          echo "✅ API is ready!"
