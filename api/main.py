@@ -1,35 +1,45 @@
-import pytest
-from fastapi.testclient import TestClient
-from main import app
-import fakeredis
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import redis
+import uuid
+import os
 
-# Initialize TestClient
-client = TestClient(app)
+app = FastAPI()
 
-# Mock Redis using fakeredis
-@pytest.fixture(autouse=True)
-def mock_redis(monkeypatch):
-    fake_r = fakeredis.FakeRedis(decode_responses=True)
-    # Patch the redis client in main.py
-    monkeypatch.setattr("main.r", fake_r)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def test_create_job():
-    response = client.post("/jobs")
-    assert response.status_code == 200
-    assert "job_id" in response.json()
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-def test_get_job_not_found():
-    response = client.get("/jobs/non-existent-id")
-    # UPDATED: Now expects 404 to match the new HTTPException logic
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Job not found"}
+r = redis.Redis(
+    host=REDIS_HOST, 
+    port=REDIS_PORT, 
+    decode_responses=True
+)
 
-def test_get_job_status():
-    # First, create a job manually in the mocked redis
-    import main
-    job_id = "test-uuid"
-    main.r.hset(f"job:{job_id}", "status", "completed")
-    
-    response = client.get(f"/jobs/{job_id}")
-    assert response.status_code == 200
-    assert response.json() == {"job_id": job_id, "status": "completed"}
+@app.post("/jobs")
+def create_job():
+    try:
+        job_id = str(uuid.uuid4())
+        r.lpush("job", job_id)
+        r.hset(f"job:{job_id}", "status", "queued")
+        return {"job_id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str):
+    try:
+        status = r.hget(f"job:{job_id}", "status")
+        if not status:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return {"job_id": job_id, "status": status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
