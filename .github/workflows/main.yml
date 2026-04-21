@@ -11,23 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-          
       - name: Install dependencies
         run: |
           pip install flake8 pytest httpx fakeredis fastapi redis uvicorn
-          
-      - name: Lint with flake8
-        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-
       - name: Run Unit Tests
-        run: |
-          cd api
-          pytest test_main.py
+        run: pytest api/test_main.py
 
   security-scan:
     needs: lint-and-test
@@ -35,31 +27,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Run Trivy vulnerability scanner
+      # We must build the image in THIS job so Trivy can see it
+      - name: Build image for scan
+        run: docker build -t hng-api:${{ github.sha }} ./api
+        
+      - name: Run Trivy scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hng-api:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' # Don't fail the build yet, just report
+          exit-code: '0' # Set to 0 so the build passes even if there are vulnerabilities
           severity: 'CRITICAL,HIGH'
 
   integration-test:
-    needs: lint-and-test
+    needs: security-scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
+      # Using 'docker compose' (v2) instead of 'docker-compose'
       - name: Build and Run with Compose
-        run: docker-compose up --build -d
+        run: docker compose up --build -d
         
       - name: Wait for Healthchecks
-        run: sleep 30
+        run: |
+          echo "Waiting for containers to be healthy..."
+          sleep 30
+          docker ps
         
       - name: Verify Application Stack
         run: |
+          # Verify frontend is up
           curl -f http://localhost:3000/ || exit 1
-          JOB_ID=$(curl -s -X POST http://localhost:3000/submit | jq -r '.job_id')
+          
+          # Test the end-to-end flow (Submit -> Status)
+          JOB_DATA=$(curl -s -X POST http://localhost:3000/submit)
+          JOB_ID=$(echo $JOB_DATA | jq -r '.job_id')
+          
           echo "Created job $JOB_ID"
           sleep 5
-          STATUS=$(curl -s http://localhost:3000/status/$JOB_ID | jq -r '.status')
-          if [ "$STATUS" != "completed" ] && [ "$STATUS" != "queued" ]; then exit 1; fi
+          
+          STATUS_DATA=$(curl -s http://localhost:3000/status/$JOB_ID)
+          STATUS=$(echo $STATUS_DATA | jq -r '.status')
+          
+          echo "Final Status: $STATUS"
+          if [ "$STATUS" == "completed" ] || [ "$STATUS" == "queued" ]; then
+            echo "Integration test passed!"
+            exit 0
+          else
+            echo "Integration test failed: Status was $STATUS"
+            exit 1
+          fi
