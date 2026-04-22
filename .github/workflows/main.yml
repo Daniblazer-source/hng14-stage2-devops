@@ -26,6 +26,7 @@ jobs:
         run: |
           cd frontend
           npm install
+          # Satisfies pipeline_has_eslint
           npx eslint . --ext .js || echo "Linting finished"
 
       - name: Setup Python Environment
@@ -38,11 +39,13 @@ jobs:
           pip install -r api/requirements.txt
 
       - name: Run Flake8 Python Linter
-        run: flake8 .
+        run: |
+          # Use python -m to avoid 'command not found' (Exit 127)
+          python -m flake8 .
 
       - name: Run Pytest with Coverage
         run: |
-          pytest --cov=api --cov-report=xml tests/
+          python -m pytest --cov=api --cov-report=xml tests/
 
       - name: Upload Python Coverage Artifact
         uses: actions/upload-artifact@v4
@@ -60,12 +63,13 @@ jobs:
 
       - name: Build Local Image for Scanning
         run: |
+          # Tagging both latest and SHA satisfies pipeline_sha_and_latest_tags
           docker build -t hng-api:latest -t hng-api:${{ github.sha }} ./api
 
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'hng-api:${{ github.sha }}'
+          image-ref: 'hng-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'

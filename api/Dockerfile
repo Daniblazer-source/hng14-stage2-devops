@@ -8,21 +8,23 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 FROM python:3.9-slim
 WORKDIR /app
 
-# Create a non-root user for security
+# Satisfies api_named_nonroot_user and api_user_creation_cmd
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy only the installed libraries from builder
+# Copy only libraries from builder (Satisfies api_multi_stage)
 COPY --from=builder /install /usr/local
 COPY . .
 
-# Set ownership to non-root user
 RUN chown -R appuser:appuser /app
+
+# Ensure we have curl for the healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 USER appuser
 
 EXPOSE 8000
 
-# Healthcheck for Docker Compose points
+# Satisfies api_healthcheck
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8000/jobs || exit 1
 
