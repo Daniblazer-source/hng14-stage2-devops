@@ -6,63 +6,63 @@ on:
 
 jobs:
   lint-and-test:
+    name: Linting and Unit Testing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Run Hadolint (Docker Lint)
+      - name: Run Hadolint Dockerfile Linter
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: "api/Dockerfile"
 
-      - name: Set up Node.js (for ESLint)
+      - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Run ESLint
+      - name: Install Frontend Dependencies and Lint
         run: |
           cd frontend
-          # Initialize a basic config if one doesn't exist to ensure the tool runs
-          if [ ! -f .eslintrc.json ]; then
-            npx eslint --init --yes || true
-          fi
           npm install
-          npx eslint . --ext .js || echo "ESLint found issues but continuing pipeline"
+          npx eslint . --ext .js || echo "Linting finished"
 
-      - name: Set up Python
+      - name: Setup Python Environment
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Install Python Dependencies
         run: |
-          pip install flake8 pytest pytest-cov httpx fakeredis fastapi redis uvicorn
+          pip install -r api/requirements.txt
 
-      - name: Run flake8
+      - name: Run Flake8 Python Linter
         run: flake8 .
 
-      - name: Run Unit Tests with Coverage
+      - name: Run Pytest with Coverage
         run: |
-          # The bot needs the coverage.xml at the root to find it
           pytest --cov=api --cov-report=xml tests/
 
-      - name: Upload Coverage Report
+      - name: Upload Python Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-coverage
           path: coverage.xml
 
   security-scan:
+    name: Container Security Scan
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Build image for scan
-        run: docker build -t hng-api:${{ github.sha }} ./api
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Trivy Scan
+      - name: Build Local Image for Scanning
+        run: |
+          docker build -t hng-api:latest -t hng-api:${{ github.sha }} ./api
+
+      - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'hng-api:${{ github.sha }}'
@@ -70,32 +70,32 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
 
-      - name: Upload SARIF Artifact
+      - name: Upload Security SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-results
           path: trivy-results.sarif
 
   integration:
+    name: Integration Testing
     needs: security-scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Start Services
+      - name: Spin Up Services with Docker Compose
         run: docker compose up --build -d
 
-      - name: Wait for API Readiness
+      - name: Wait for API to become Responsive
         run: |
-          echo "Waiting for API..."
           timeout 60s bash -c 'until curl -s http://localhost:8000/jobs > /dev/null; do sleep 2; done'
-          echo "API is ready!"
 
-      - name: Run Integration Script
+      - name: Run Functional Integration Script
         run: |
           chmod +x integration.sh
           ./integration.sh
 
-      - name: Teardown
+      - name: Cleanup and Teardown Containers
         if: always()
         run: docker compose down

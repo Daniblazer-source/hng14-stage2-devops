@@ -1,29 +1,29 @@
-# Stage 1: builder
+# Stage 1: Build dependencies
 FROM python:3.9-slim AS builder
-WORKDIR /app
+WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Stage 2: Final
+# Stage 2: Final runtime image
 FROM python:3.9-slim
 WORKDIR /app
 
-# Create non-root user
+# Create a non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Copy installed packages from builder
+# Copy only the installed libraries from builder
 COPY --from=builder /install /usr/local
 COPY . .
 
-# Ensure appuser owns the app directory
+# Set ownership to non-root user
 RUN chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8000
 
-# Healthcheck to verify the API is responsive
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+# Healthcheck for Docker Compose points
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:8000/jobs || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
