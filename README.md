@@ -16,36 +16,40 @@ Before starting, ensure your machine has the following installed:
 ```bash
 git clone gitHub.com/Daniblazer-source/hng14-stage2-devops.git
 cd hng14-stage2-devops
+```
 
 
- Environment Setup
+ ### 2. Environment Setup
 The application requires environment variables to connect the services.
 
-Bash
+```Bash
 cp .env.example .env
+```
 
 
 Bring Up the Stack
 Run the following command to build the images and start the containers in detached mode:
 
-Bash
+```Bash
 docker compose up --build -d
+```
 
 What a Successful Startup Looks Like
 Once the command finishes, verify the deployment using these three checks:
 
 Process Check: Run docker compose ps. You should see 4 services (api, worker, frontend, redis) with a status of Up or Healthy.
 
-API Documentation: Navigate to http://localhost:8000/docs. You should see the FastAPI Swagger UI.
+API Documentation: Navigate to `http://localhost:8000/docs`. You should see the FastAPI Swagger UI.
 
 Automated Verification: Run the integration script to test the end-to-end flow:
 
-Bash
+```Bash
 chmod +x integration.sh
 ./integration.sh
 A successful run will output "Integration tests passed!"
+```
 
-🏗️ Architecture
+### 3.🏗️ Architecture
 API: Handles HTTP requests and job queuing.
 
 Worker: Consumes jobs from Redis.
@@ -54,7 +58,7 @@ Redis: Acts as the database and message broker.
 
 Frontend: User interface.
 
-🛡️ DevOps Best Practices
+### 4.🛡️ DevOps Best Practices
 Multi-stage Builds: Optimized for size and security.
 
 Non-root Users: Services run as appuser.
